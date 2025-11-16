@@ -2,114 +2,113 @@ import os
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
-# ----------------------
-# MAP FUNCTION
-# ----------------------
+# --------------------------------------------------------
+# MAP: Extract names from input XML
+# --------------------------------------------------------
 def map_names(xml_file):
-    """
-    Reads an XML file with <person><name>...</name></person> elements
-    and emits (name, 1) for each person.
-    Returns a list of tuples (name, 1).
-    """
     tree = ET.parse(xml_file)
     root = tree.getroot()
 
-    results = []
+    result = []
     for person in root.findall(".//person"):
         name = person.findtext("name")
         if name:
-            results.append((name.strip(), 1))
+            result.append((name.strip(), 1))
+    return result
 
-    return results
+
+# --------------------------------------------------------
+# WRITE MAP OUTPUT AS XML FILE
+# --------------------------------------------------------
+def write_map_xml(output_file, mapped_list):
+    root = ET.Element("map")
+
+    for name, value in mapped_list:
+        item = ET.SubElement(root, "item")
+        name_el = ET.SubElement(item, "name")
+        name_el.text = name
+        value_el = ET.SubElement(item, "value")
+        value_el.text = str(value)
+
+    ET.ElementTree(root).write(output_file, encoding="utf-8", xml_declaration=True)
 
 
-# ----------------------
-# SHUFFLE FUNCTION
-# ----------------------
-def shuffle(mapped_data):
-    """
-    Groups the mapped results by key (name).
-    Input: list of (name, 1)
-    Output: dict { name: [1,1,1...] }
-    """
+# --------------------------------------------------------
+# SHUFFLE / GROUP
+# --------------------------------------------------------
+def shuffle(mapped_list):
     grouped = defaultdict(list)
-    for key, value in mapped_data:
-        grouped[key].append(value)
+    for name, value in mapped_list:
+        grouped[name].append(value)
     return grouped
 
 
-# ----------------------
-# REDUCE FUNCTION
-# ----------------------
+# --------------------------------------------------------
+# REDUCE
+# --------------------------------------------------------
 def reduce_counts(grouped_data):
-    """
-    Sums all counts for each name.
-    Input: dict { name: [1,1,1] }
-    Output: dict { name: total }
-    """
-    reduced = {}
-    for name, values in grouped_data.items():
-        reduced[name] = sum(values)
-    return reduced
+    return {name: sum(values) for name, values in grouped_data.items()}
 
 
-# ----------------------
-# PIPELINE FOR ONE FILE
-# ----------------------
+# --------------------------------------------------------
+# WRITE REDUCE OUTPUT AS XML FILE
+# (Same structure as your screenshot)
+# --------------------------------------------------------
+def write_reduce_xml(output_file, reduced_dict):
+    root = ET.Element("reduce")
+
+    for name, value in reduced_dict.items():
+        item = ET.SubElement(root, "item")
+        name_el = ET.SubElement(item, "name")
+        name_el.text = name
+        value_el = ET.SubElement(item, "value")
+        value_el.text = str(value)
+
+    ET.ElementTree(root).write(output_file, encoding="utf-8", xml_declaration=True)
+
+
+# --------------------------------------------------------
+# PROCESS ONE FILE (Map → Shuffle → Reduce → XML)
+# --------------------------------------------------------
 def process_file(xml_file):
-    """
-    Executes Map → Shuffle → Reduce for a single XML file.
-    Returns the reduced output.
-    """
-    print(f"Processing {xml_file}...")
+    base = os.path.splitext(xml_file)[0]
 
     mapped = map_names(xml_file)
+    write_map_xml(f"map_{base}.xml", mapped)
+
     grouped = shuffle(mapped)
     reduced = reduce_counts(grouped)
 
-    return mapped, grouped, reduced
+    write_reduce_xml(f"reduce_{base}.xml", reduced)
+
+    return reduced
 
 
-# ----------------------
-# MAIN PIPELINE
-# ----------------------
-def process_all_files(xml_files):
-    all_reduced = []
-
-    for xml_file in xml_files:
-        mapped, grouped, reduced = process_file(xml_file)
-
-        print(f"\n--- MAP OUTPUT for {xml_file} ---")
-        print(mapped)
-
-        print(f"\n--- GROUPED (SHUFFLE) OUTPUT---")
-        print(grouped)
-
-        print(f"\n--- REDUCE OUTPUT ---")
-        print(reduced)
-
-        all_reduced.append(reduced)
-
-    # FINAL MERGE OF ALL REDUCERS
-    final_counts = defaultdict(int)
-    for reduced_dict in all_reduced:
-        for name, count in reduced_dict.items():
-            final_counts[name] += count
-
-    return final_counts
-
-
-# ----------------------
-# EXECUTION
-# ----------------------
+# --------------------------------------------------------
+# MAIN PROCESSING OF ALL FILES
+# --------------------------------------------------------
 if __name__ == "__main__":
-
     xml_files = ["people1.xml", "people2.xml", "people3.xml"]
 
-    final_result = process_all_files(xml_files)
+    print("Processing XML files...")
 
-    print("\n======================")
-    print("FINAL MERGED COUNTS")
-    print("======================")
-    for name, count in final_result.items():
-        print(f"{name}: {count}")
+    all_reduced = []
+
+    # Process each file separately
+    for file in xml_files:
+        reduced_dict = process_file(file)
+        all_reduced.append(reduced_dict)
+
+    # MERGE REDUCES
+    final_counts = defaultdict(int)
+    for rd in all_reduced:
+        for name, count in rd.items():
+            final_counts[name] += count
+
+    # WRITE FINAL MERGED XML
+    write_reduce_xml("final_reduce.xml", final_counts)
+
+    print("All XML files generated:")
+    print(" - map_people1.xml / map_people2.xml / map_people3.xml")
+    print(" - reduce_people1.xml / reduce_people2.xml / reduce_people3.xml")
+    print(" - final_reduce.xml")
